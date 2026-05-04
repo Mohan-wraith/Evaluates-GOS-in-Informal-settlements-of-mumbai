@@ -1,9 +1,9 @@
-flask
+flask==2.3.3
 flask-cors
 gunicorn
 numpy
 Pillow
 gdown
-
 tensorflow==2.13.0
 keras==2.13.1
+werkzeug==2.3.7
