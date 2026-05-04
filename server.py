@@ -5,16 +5,12 @@ import numpy as np
 from PIL import Image
 import io
 import base64
-import time
-import math
 import os
 
-# ─── App ──────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 CORS(app)
 
-# ─── Class definitions ────────────────────────────────────────────────────────
 CLASS_NAMES = [
     "Built-Up", "Vegetation", "Barren",
     "Water", "Impervious Surfaces", "Informal Settlements"
@@ -32,46 +28,51 @@ CLASS_COLORS = np.array([
 PATCH_SIZE = 64
 model = None
 
-# ─── Model loading ────────────────────────────────────────────────────────────
+
+# 🔥 FORCE MODEL LOAD (SAFE + GUARANTEED)
 def load_model():
     global model
-    print("🔄 Loading VGG19-UNet model…")
+
+    print("🚀 STARTING MODEL LOAD")
 
     model_path = os.path.join(os.getcwd(), "models", "vgg19_unet_final.keras")
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
-    if not os.path.exists(model_path):
-        print("⬇️ Downloading model from Google Drive...")
-        import gdown
-        url = "https://drive.google.com/uc?id=1o7fu5j8ubWm6OW06lZbG1mYwDe3eG-A_"
-        gdown.download(url, model_path, quiet=False)
-
     try:
+        if not os.path.exists(model_path):
+            print("⬇️ Downloading model...")
+            import gdown
+            url = "https://drive.google.com/uc?id=1o7fu5j8ubWm6OW06lZbG1mYwDe3eG-A_"
+            gdown.download(url, model_path, quiet=False)
+
+        print("📦 Loading model file...")
         model = tf.keras.models.load_model(model_path, compile=False)
-        print("✅ Model loaded successfully")
-        return True
+
+        print("✅ MODEL LOADED SUCCESSFULLY")
+
     except Exception as e:
-        print(f"❌ Model load error: {e}")
-        return False
+        print(f"❌ MODEL LOAD FAILED: {e}")
+        model = None
 
 
-# 🔥 IMPORTANT FIX: LOAD MODEL WHEN SERVER STARTS (for Render/Gunicorn)
-load_model()
+# 🔥 CRITICAL: LOAD BEFORE FIRST REQUEST
+@app.before_first_request
+def init():
+    load_model()
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-def open_image(file_bytes: bytes) -> Image.Image:
+# ─── HELPERS ───
+def open_image(file_bytes):
     img = Image.open(io.BytesIO(file_bytes))
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-    return img
+    return img.convert("RGB")
 
-def create_colored_mask(predictions: np.ndarray) -> np.ndarray:
+def create_colored_mask(predictions):
     return CLASS_COLORS[predictions]
 
-def calculate_gos(predictions: np.ndarray) -> dict:
+def calculate_gos(predictions):
     total = predictions.size
     pcts = {i: float(np.sum(predictions == i)) / total * 100 for i in range(6)}
+
     return {
         "builtUp": f"{pcts[0]:.2f}",
         "vegetation": f"{pcts[1]:.2f}",
@@ -84,12 +85,13 @@ def calculate_gos(predictions: np.ndarray) -> dict:
         "isSlum": bool(pcts[5] > 10),
     }
 
-def img_to_b64_png(pil_img: Image.Image) -> str:
+def img_to_b64_png(pil_img):
     buf = io.BytesIO()
     pil_img.save(buf, format="PNG")
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
-# ─── Routes ───────────────────────────────────────────────────────────────────
+
+# ─── ROUTES ───
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({
@@ -97,8 +99,9 @@ def health():
         "model": model is not None,
         "modelName": "VGG19-UNet",
         "accuracy": "93.72%",
-        "version": "2.0"
+        "version": "3.0"
     })
+
 
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -124,8 +127,3 @@ def predict():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-# ─── Entry point (only for local run) ──────────────────────────────────────────
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
